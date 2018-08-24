@@ -1,3 +1,4 @@
+
 package com.sophon.summer.util.concurrent;
 
 import java.util.*;
@@ -402,23 +403,11 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
     }
 
     /**
-     * Decrements the idleWorkerCount and workerCount field of ctl. This is called only on
+     * Decrements the workerCount field of ctl. This is called only on
      * abrupt termination of a thread (see processWorkerExit). Other
      * decrements are performed within getTask.
      */
     private void decrementWorkerCount() {
-        /*
-         * Decrease the idle worker count before the total worker count decreased.
-         *
-         * Since the decrement of the idle worker count and worker count are not in the same transaction,
-         * a extreme case may be: the idle worker count is decreased but the total worker count hasn't been decreased yet,
-         * then another thread try to create a new worker but failed because the worker count >= maximumPoolSize.
-         * It's reasonable.
-         *
-         * If decrease the total worker count first, then the extreme case will be: another thread found there's an
-         * idle worker, then stopped to create a new worker, it doesn't make sense.
-         */
-        idleWorkerCount.getAndDecrement();
         do {
         } while (!compareAndDecrementWorkerCount(ctl.get()));
     }
@@ -708,7 +697,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
                     (runStateOf(c) == SHUTDOWN && !workQueue.isEmpty()))
                 return;
             if (workerCountOf(c) != 0) { // Eligible to terminate
-                interruptidleWorkerCount(ONLY_ONE);
+                interruptIdleWorkers(ONLY_ONE);
                 return;
             }
 
@@ -792,7 +781,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      *                idle workers so that redundant workers exit promptly, not
      *                waiting for a straggler task to finish.
      */
-    private void interruptidleWorkerCount(boolean onlyOne) {
+    private void interruptIdleWorkers(boolean onlyOne) {
         final ReentrantLock mainLock = this.mainLock;
         mainLock.lock();
         try {
@@ -815,11 +804,11 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
     }
 
     /**
-     * Common form of interruptidleWorkerCount, to avoid having to
+     * Common form of interruptIdleWorkers, to avoid having to
      * remember what the boolean argument means.
      */
-    private void interruptidleWorkerCount() {
-        interruptidleWorkerCount(false);
+    private void interruptIdleWorkers() {
+        interruptIdleWorkers(false);
     }
 
     private static final boolean ONLY_ONE = true;
@@ -923,7 +912,6 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
                         wc >= (core ? corePoolSize : maximumPoolSize))
                     return false;
                 if (compareAndIncrementWorkerCount(c)) {
-                    idleWorkerCount.getAndIncrement();
                     break retry;
                 }
                 c = ctl.get();  // Re-read ctl
@@ -1052,6 +1040,9 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      * workerCount is decremented
      */
     private Runnable getTask() {
+        // Decrease immediately whatever the task get or not
+        idleWorkerCount.getAndDecrement();
+        System.out.println("decrease");
         boolean timedOut = false; // Did the last poll() time out?
 
         for (; ; ) {
@@ -1071,8 +1062,11 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
 
             if ((wc > maximumPoolSize || (timed && timedOut))
                     && (wc > 1 || workQueue.isEmpty())) {
-                if (compareAndDecrementWorkerCount(c))
+                // If decrease the total worker count failed, it may be caused by another worker has exited.
+                // So we need to recheck the status, that why here only call CWS once.
+                if (compareAndDecrementWorkerCount(c)){
                     return null;
+                }
                 continue;
             }
 
@@ -1080,10 +1074,8 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
                 Runnable r = timed ?
                         workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
                         workQueue.take();
-                if (r != null) {
-                    idleWorkerCount.getAndDecrement();
+                if (r != null)
                     return r;
-                }
                 timedOut = true;
             } catch (InterruptedException retry) {
                 timedOut = false;
@@ -1158,6 +1150,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
                     try {
                         task.run();
                         idleWorkerCount.getAndIncrement();
+                        System.out.println("increase");
                     } catch (RuntimeException x) {
                         thrown = x;
                         throw x;
@@ -1330,6 +1323,10 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
         this.handler = handler;
     }
 
+    public AtomicInteger getIdleWorkerCount() {
+        return idleWorkerCount;
+    }
+
     /**
      * Executes the given task sometime in the future.  The task
      * may execute in a new thread or in an existing pooled thread.
@@ -1377,7 +1374,9 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
                 return;
             c = ctl.get();
         }
-        if (idleWorkerCount.get() == 0 && workerCountOf(c) < maximumPoolSize) {
+        System.out.println("idleWorkerCount" + idleWorkerCount.get());
+        System.out.println("WorkerCount" + workerCountOf(c));
+        if (idleWorkerCount.get() <= 0 && workerCountOf(c) < maximumPoolSize) {
             if (addWorker(command, false))
                 return;
             c = ctl.get();
@@ -1409,7 +1408,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
         try {
             checkShutdownAccess();
             advanceRunState(SHUTDOWN);
-            interruptidleWorkerCount();
+            interruptIdleWorkers();
             onShutdown(); // hook for ScheduledThreadPoolExecutor
         } finally {
             mainLock.unlock();
@@ -1564,7 +1563,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
         int delta = corePoolSize - this.corePoolSize;
         this.corePoolSize = corePoolSize;
         if (workerCountOf(ctl.get()) > corePoolSize)
-            interruptidleWorkerCount();
+            interruptIdleWorkers();
         else if (delta > 0) {
             // We don't really know how many new threads are "needed".
             // As a heuristic, prestart enough new workers (up to new
@@ -1665,7 +1664,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
         if (value != allowCoreThreadTimeOut) {
             allowCoreThreadTimeOut = value;
             if (value)
-                interruptidleWorkerCount();
+                interruptIdleWorkers();
         }
     }
 
@@ -1686,7 +1685,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
             throw new IllegalArgumentException();
         this.maximumPoolSize = maximumPoolSize;
         if (workerCountOf(ctl.get()) > maximumPoolSize)
-            interruptidleWorkerCount();
+            interruptIdleWorkers();
     }
 
     /**
@@ -1722,7 +1721,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
         long delta = keepAliveTime - this.keepAliveTime;
         this.keepAliveTime = keepAliveTime;
         if (delta < 0)
-            interruptidleWorkerCount();
+            interruptIdleWorkers();
     }
 
     /**
@@ -2125,4 +2124,3 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
         }
     }
 }
-
