@@ -429,7 +429,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      * Lock held on access to workers set and related bookkeeping.
      * While we could use a concurrent set of some sort, it turns out
      * to be generally preferable to use a lock. Among the reasons is
-     * that this serializes interruptidleWorkerCount, which avoids
+     * that this serializes interruptIdleWorkers, which avoids
      * unnecessary interrupt storms, especially during shutdown.
      * Otherwise exiting threads would concurrently interrupt those
      * that have not yet interrupted. It also simplifies some of the
@@ -540,13 +540,13 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      * these checks pass.
      * <p>
      * All actual invocations of Thread.interrupt (see
-     * interruptidleWorkerCount and interruptWorkers) ignore
+     * interruptIdleWorkers and interruptWorkers) ignore
      * SecurityExceptions, meaning that the attempted interrupts
      * silently fail. In the case of shutdown, they should not fail
      * unless the SecurityManager has inconsistent policies, sometimes
      * allowing access to a thread and sometimes not. In such cases,
      * failure to actually interrupt threads may disable or delay full
-     * termination. Other uses of interruptidleWorkerCount are advisory,
+     * termination. Other uses of interruptIdleWorkers are advisory,
      * and failure to actually interrupt will merely delay response to
      * configuration changes so is not handled exceptionally.
      */
@@ -1040,53 +1040,53 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      * workerCount is decremented
      */
     private Runnable getTask() {
-        // Decrease immediately whatever the task get or not
-        idleWorkerCount.getAndDecrement();
-        System.out.println("decrease");
         boolean timedOut = false; // Did the last poll() time out?
 
-        for (; ; ) {
-            int c = ctl.get();
-            int rs = runStateOf(c);
+        try {
+            for (; ; ) {
+                int c = ctl.get();
+                int rs = runStateOf(c);
 
-            // Check if queue empty only if necessary.
-            if (rs >= SHUTDOWN && (rs >= STOP || workQueue.isEmpty())) {
-                decrementWorkerCount();
-                return null;
-            }
-
-            int wc = workerCountOf(c);
-
-            // Are workers subject to culling?
-            boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
-
-            if ((wc > maximumPoolSize || (timed && timedOut))
-                    && (wc > 1 || workQueue.isEmpty())) {
-                // If decrease the total worker count failed, it may be caused by another worker has exited.
-                // So we need to recheck the status, that why here only call CWS once.
-                if (compareAndDecrementWorkerCount(c)){
+                // Check if queue empty only if necessary.
+                if (rs >= SHUTDOWN && (rs >= STOP || workQueue.isEmpty())) {
+                    decrementWorkerCount();
                     return null;
                 }
-                continue;
-            }
 
-            try {
-                Runnable r = timed ?
-                        workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
-                        workQueue.take();
-                if (r != null)
-                    return r;
-                timedOut = true;
-            } catch (InterruptedException retry) {
-                timedOut = false;
+                int wc = workerCountOf(c);
+
+                // Are workers subject to culling?
+                boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
+
+                if ((wc > maximumPoolSize || (timed && timedOut))
+                        && (wc > 1 || workQueue.isEmpty())) {
+                    if (compareAndDecrementWorkerCount(c))
+                        return null;
+                    continue;
+                }
+
+                try {
+                    Runnable r = timed ?
+                            workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
+                            workQueue.take();
+                    if (r != null)
+                        return r;
+                    timedOut = true;
+                } catch (InterruptedException retry) {
+                    timedOut = false;
+                }
             }
+        } finally {
+            // Decrease the idle count whatever the task get or not
+            // because the worker will be decreased whatever the task get or not
+            idleWorkerCount.getAndDecrement();
         }
     }
 
     /**
      * Main worker run loop.  Repeatedly gets tasks from queue and
      * executes them, while coping with a number of issues:
-     * <p>
+     *
      * 1. We may start out with an initial task, in which case we
      * don't need to get the first one. Otherwise, as long as pool is
      * running, we get tasks from getTask. If it returns null then the
@@ -1094,17 +1094,17 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      * parameters.  Other exits result from exception throws in
      * external code, in which case completedAbruptly holds, which
      * usually leads processWorkerExit to replace this thread.
-     * <p>
+     *
      * 2. Before running any task, the lock is acquired to prevent
      * other pool interrupts while the task is executing, and then we
      * ensure that unless pool is stopping, this thread does not have
      * its interrupt set.
-     * <p>
+     *
      * 3. Each task run is preceded by a call to beforeExecute, which
      * might throw an exception, in which case we cause thread to die
      * (breaking loop with completedAbruptly true) without processing
      * the task.
-     * <p>
+     *
      * 4. Assuming beforeExecute completes normally, we run the task,
      * gathering any of its thrown exceptions to send to afterExecute.
      * We separately handle RuntimeException, Error (both of which the
@@ -1113,12 +1113,12 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      * wrap them within Errors on the way out (to the thread's
      * UncaughtExceptionHandler).  Any thrown exception also
      * conservatively causes thread to die.
-     * <p>
+     *
      * 5. After task.run completes, we call afterExecute, which may
      * also throw an exception, which will also cause thread to
      * die. According to JLS Sec 14.20, this exception is the one that
      * will be in effect even if task.run throws.
-     * <p>
+     *
      * The net effect of the exception mechanics is that afterExecute
      * and the thread's UncaughtExceptionHandler have as accurate
      * information as we can provide about any problems encountered by
@@ -1150,7 +1150,6 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
                     try {
                         task.run();
                         idleWorkerCount.getAndIncrement();
-                        System.out.println("increase");
                     } catch (RuntimeException x) {
                         thrown = x;
                         throw x;
@@ -1330,7 +1329,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
     /**
      * Executes the given task sometime in the future.  The task
      * may execute in a new thread or in an existing pooled thread.
-     * <p>
+     *
      * If the task cannot be submitted for execution, either because this
      * executor has been shutdown or because its capacity has been reached,
      * the task is handled by the current {@code RejectedExecutionHandler}.
@@ -1374,8 +1373,6 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
                 return;
             c = ctl.get();
         }
-        System.out.println("idleWorkerCount" + idleWorkerCount.get());
-        System.out.println("WorkerCount" + workerCountOf(c));
         if (idleWorkerCount.get() <= 0 && workerCountOf(c) < maximumPoolSize) {
             if (addWorker(command, false))
                 return;
@@ -1959,8 +1956,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      * @param t the thread that will run task {@code r}
      * @param r the task that will be executed
      */
-    protected void beforeExecute(Thread t, Runnable r) {
-    }
+    protected void beforeExecute(Thread t, Runnable r) { }
 
     /**
      * Method invoked upon completion of execution of the given Runnable.
