@@ -444,7 +444,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      * Set containing all worker threads in pool. Accessed only when
      * holding mainLock.
      */
-    private final HashSet<Worker> workers = new HashSet<Worker>();
+    private final HashSet<Worker> workers = new HashSet<>();
 
     /**
      * Wait condition to support awaitTermination
@@ -632,19 +632,19 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
             return true;
         }
 
-        public void lock() {
+        void lock() {
             acquire(1);
         }
 
-        public boolean tryLock() {
+        boolean tryLock() {
             return tryAcquire(1);
         }
 
-        public void unlock() {
+        void unlock() {
             release(1);
         }
 
-        public boolean isLocked() {
+        boolean isLocked() {
             return isHeldExclusively();
         }
 
@@ -853,7 +853,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
      */
     private List<Runnable> drainQueue() {
         BlockingQueue<Runnable> q = workQueue;
-        ArrayList<Runnable> taskList = new ArrayList<Runnable>();
+        ArrayList<Runnable> taskList = new ArrayList<>();
         q.drainTo(taskList);
         if (!q.isEmpty()) {
             for (Runnable r : q.toArray(new Runnable[0])) {
@@ -1372,8 +1372,7 @@ public class ThreadPoolEnhancedExecutor extends ThreadPoolExecutor {
             if (addWorker(command, true))
                 return;
             c = ctl.get();
-        }
-        if (idleWorkerCount.get() <= 0 && workerCountOf(c) < maximumPoolSize) {
+        }else if (idleWorkerCount.get() <= 0 && workerCountOf(c) < maximumPoolSize) {
             if (addWorker(command, false))
                 return;
             c = ctl.get();

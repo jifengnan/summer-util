@@ -18,12 +18,12 @@ public class ThreadPoolEnhancedExecutorTest {
 
     @Before
     public void prepareExecutor() {
-        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<Runnable>(10);
+        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>(10);
 //        int corePoolSize = Runtime.getRuntime().availableProcessors();
         int corePoolSize = 4;
         int maximumPoolSize = corePoolSize * 2;
         executor = new ThreadPoolEnhancedExecutor(corePoolSize + 1, maximumPoolSize + 1, 3,
-                TimeUnit.MINUTES, workQueue);
+                TimeUnit.MINUTES, workQueue, new ThreadPoolEnhancedExecutor.DiscardPolicy());
 
     }
 
@@ -33,7 +33,7 @@ public class ThreadPoolEnhancedExecutorTest {
     }
 
     @Test
-    public void TestExecuteCorePoolSizeLimitation() throws Exception{
+    public void TestExecuteCorePoolSizeLimitation(){
         int count = 5;
         for (int i = 0; i < count; i++) {
             executor.execute(() -> System.out.println(Thread.currentThread().getName()));
@@ -41,21 +41,20 @@ public class ThreadPoolEnhancedExecutorTest {
         // The number must be 5
         Assert.assertEquals(5, executor.getPoolSize());
 
-        while(executor.getIdleWorkerCount().get() <= 0){
+        while (executor.getIdleWorkerCount().get() <= 0) {
         }
         executor.execute(() -> System.out.println(Thread.currentThread().getName()));
         Assert.assertEquals(5, executor.getPoolSize());
     }
 
     @Test
-    public void TestExecuteMaxPoolSizeLimitation() throws Exception{
+    public void TestExecuteMaxPoolSizeLimitation() {
         int count = 10;
         final CountDownLatch latch = new CountDownLatch(count);
         for (int i = 0; i < count; i++) {
             executor.execute(() -> {
                 try {
                     latch.await();
-                    Thread.sleep(150);
                     System.out.println(Thread.currentThread().getName());
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -64,7 +63,13 @@ public class ThreadPoolEnhancedExecutorTest {
             latch.countDown();
         }
         Assert.assertEquals(9, executor.getPoolSize());
-        Thread.sleep(2000);
+    }
+
+    @Test
+    public void TestExecuteShutDown() throws Exception {
+        new Thread(() -> executor.shutdown()).start();
+        Thread.sleep(100);
+        executor.execute(() -> System.out.println(Thread.currentThread().getName()));
     }
 
 }
