@@ -1,5 +1,5 @@
 
-package com.sophon.summer.util.concurrent;
+package com.github.jifengnan.summer.util.concurrent;
 
 import org.junit.Assert;
 import org.junit.Before;
