@@ -9,6 +9,7 @@
 	<version>1.0-SNAPSHOT</version>
 	<modules>
 		<module>summer-util-concurrent</module>
+        <module>summer-util-token</module>
 		<module>summer-util-web</module>
 	</modules>
 
