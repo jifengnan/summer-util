@@ -10,52 +10,69 @@ import java.util.function.BiPredicate;
  *
  * @author jifengnan  2019-01-22
  */
-public class SimpleCache<K, V> extends LinkedHashMap<K, V> {
+public class SimpleCache extends LinkedHashMap<String, Object> {
     private static final int DEFAULT_CACHE_SIZE = 100;
-    private BiPredicate<Map<K, V>, Map.Entry<K, V>> cacheLogic;
-
-    public SimpleCache(int capacity, float loadFactor, BiPredicate<Map<K, V>, Map.Entry<K, V>> cacheLogic) {
-        super(capacity, loadFactor);
-        setCacheLogic(cacheLogic);
-    }
-
-    public SimpleCache(int initialCapacity, BiPredicate<Map<K, V>, Map.Entry<K, V>> cacheLogic) {
-        super(initialCapacity);
-        setCacheLogic(cacheLogic);
-    }
+    private final BiPredicate<Map<String, Object>, Map.Entry<String, Object>> removeLogic;
 
     /**
-     * 创建一个容量为100的，FIFO的缓存
+     * 创建一个容量为100的FIFO缓存
      */
     public SimpleCache() {
-        super(128, 1);
-        this.cacheLogic = (m, e) -> m.size() >= DEFAULT_CACHE_SIZE;
+        this(DEFAULT_CACHE_SIZE, false, SimpleCache::test);
     }
 
     /**
-     * 创建一个容量为100的指定策略的缓存
+     * 创建一个指定容量的FIFO缓存
      *
-     * @param cacheLogic 指定的缓存策略
+     * @param capacity 指定容量
      */
-    public SimpleCache(BiPredicate<Map<K, V>, Map.Entry<K, V>> cacheLogic) {
-        super(128, 1);
-        setCacheLogic(cacheLogic);
+    public SimpleCache(int capacity) {
+        this(capacity, false, SimpleCache::test);
     }
 
-    public SimpleCache(int initialCapacity, float loadFactor, boolean accessOrder, BiPredicate<Map<K, V>, Map.Entry<K, V>> cacheLogic) {
-        super(initialCapacity, loadFactor, accessOrder);
-        setCacheLogic(cacheLogic);
+    /**
+     * 创建一个指定容量的缓存
+     *
+     * @param capacity    指定容量
+     * @param accessOrder the ordering mode - <tt>true</tt> for access-order, <tt>false</tt> for insertion-order
+     */
+    public SimpleCache(int capacity, boolean accessOrder) {
+        this(capacity, accessOrder, SimpleCache::test);
     }
 
-    private void setCacheLogic(BiPredicate<Map<K, V>, Map.Entry<K, V>> cacheLogic) {
-        if (cacheLogic == null) {
-            throw new IllegalArgumentException("cacheLogic cannot be null");
+    /**
+     * 创建一个指定容量指定移除逻辑的FIFO缓存
+     *
+     * @param capacity    指定容量
+     * @param removeLogic 指定的移除逻辑
+     */
+    public SimpleCache(int capacity, BiPredicate<Map<String, Object>, Map.Entry<String, Object>> removeLogic) {
+        this(capacity, false, removeLogic);
+    }
+
+    /**
+     * 创建一个指定容量指定移除逻辑的缓存
+     *
+     * @param capacity    指定容量
+     * @param accessOrder the ordering mode - <tt>true</tt> for access-order, <tt>false</tt> for insertion-order
+     * @param removeLogic 指定的移除逻辑
+     */
+    public SimpleCache(int capacity, boolean accessOrder, BiPredicate<Map<String, Object>, Map.Entry<String, Object>> removeLogic) {
+        super(capacity, 1, accessOrder);
+        if (removeLogic == null) {
+            throw new IllegalArgumentException("removeLogic cannot be null");
         }
-        this.cacheLogic = cacheLogic;
+        this.removeLogic = removeLogic;
     }
 
     @Override
-    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-        return cacheLogic.test(this, eldest);
+    protected boolean removeEldestEntry(Map.Entry<String, Object> eldest) {
+        return removeLogic.test(this, eldest);
     }
+
+
+    private static boolean test(Map<String, Object> m, Map.Entry<String, Object> e) {
+        return m.size() >= DEFAULT_CACHE_SIZE;
+    }
+
 }
